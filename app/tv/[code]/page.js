@@ -1,5 +1,6 @@
 'use client';
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
+import * as snd from '@/lib/sound';
 import QRCode from 'qrcode';
 import { post, usePoll } from '@/lib/client';
 import Board from '@/components/Board';
@@ -15,6 +16,51 @@ export default function TV({ params }) {
     QRCode.toDataURL(`${location.origin}/play/${code}`, { margin: 1, width: 360 }).then(setQr).catch(() => {});
   }, [code]);
   const { data: v, error, refresh } = usePoll(host === null ? null : `/api/room/${code}?t=${host}`, 1500);
+
+  // ---------- เสียงและแอนิเมชันตามเหตุการณ์ ----------
+  const [soundOn, setSoundOn] = useState(false);
+  const [needTap, setNeedTap] = useState(false);
+  const [active, setActive] = useState([]);
+  const [flash, setFlash] = useState(0);
+  const [banner, setBanner] = useState('');
+  const lastFx = useRef(null);
+  useEffect(() => {
+    if (snd.soundPref()) {
+      setNeedTap(true);
+      const go = () => { if (snd.enable()) { setSoundOn(true); setNeedTap(false); } window.removeEventListener('pointerdown', go); };
+      window.addEventListener('pointerdown', go);
+      return () => window.removeEventListener('pointerdown', go);
+    }
+  }, []);
+  const g0 = v && v.game;
+  useEffect(() => {
+    if (!g0) return;
+    const list = g0.fx || [];
+    if (lastFx.current === null) { lastFx.current = list.length ? list[list.length - 1].i : 0; }
+    const fresh = list.filter((f) => f.i > lastFx.current);
+    if (!fresh.length) return;
+    lastFx.current = fresh[fresh.length - 1].i;
+    fresh.forEach((f, idx) => {
+      setTimeout(() => {
+        snd.sfx(f.k);
+        if (f.c) {
+          setActive((a) => [...a, f]);
+          setTimeout(() => setActive((a) => a.filter((x) => x.i !== f.i)), 1700);
+        }
+        if (f.k === 'volcano') { setFlash((n) => n + 1); setBanner('🌋 ภูเขาไฟระเบิด!'); setTimeout(() => setBanner(''), 3000); }
+        if (f.k === 'whirl') { setBanner('🌀 วังวน!'); setTimeout(() => setBanner(''), 2200); }
+        if (f.k === 'shark') { setBanner('🦈 ฉลามมาแล้ว!'); setTimeout(() => setBanner(''), 2200); }
+        if (f.k === 'whale') { setBanner('🐋 วาฬโผล่!'); setTimeout(() => setBanner(''), 2200); }
+      }, idx * 450);
+    });
+  }, [g0 && g0.fx && g0.fx.length ? g0.fx[g0.fx.length - 1].i : 0]);
+  useEffect(() => {
+    if (!g0) return;
+    snd.setTension(g0.phase === 'play' ? 1 - Math.min(1, g0.tilesLeft / 40) : 0);
+  }, [g0 && g0.tilesLeft]);
+  function toggleSound() {
+    if (soundOn) { snd.disable(); setSoundOn(false); } else if (snd.enable()) { setSoundOn(true); setNeedTap(false); }
+  }
 
   async function act(a) {
     setMsg('');
@@ -43,7 +89,10 @@ export default function TV({ params }) {
   const g = v.game;
   return (
     <div className="tv">
-      <div className="board"><Board g={g} /></div>
+      {flash > 0 && <div className="flash" key={'f' + flash} />}
+      {banner && <div className="banner" key={banner}>{banner}</div>}
+      <button className="btn alt tvmute" onClick={toggleSound}>{soundOn ? '🔊 เสียงเปิด' : needTap ? '🔈 แตะเพื่อเปิดเสียง' : '🔇 เปิดเสียง'}</button>
+      <div className={"board" + (flash ? " shake" : "")} key={"b" + flash}><Board g={g} fx={active} /></div>
       <div className="side">
         <div className="panel">
           <div className="turnbox">{statusText(g, null)}</div>

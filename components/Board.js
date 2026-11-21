@@ -17,7 +17,18 @@ export { VW, VH };
 
 function colOf(g, o, cs) { return COLORS[(g.col[o] || [])[cs] || (g.col[o] || [])[0]] || '#ccc'; }
 
-export default function Board({ g, hi, sel, onCell, scale = 1 }) {
+const FXICO = { sink: '💧', bite: '💥', capsize: '🌊', whirl: '🌀', volcano: '🌋', shark: '🦈', whale: '🐋', boat: '⛵', safe: '🎉', defend: '🛡', splash: '💦', dolphin: '🐬', serpentmove: '', sharkmove: '', whalemove: '' };
+const FXCOL = { sink: '#8fd3ff', bite: '#ff5a5a', capsize: '#8fd3ff', whirl: '#c58bff', volcano: '#ff8a1f', shark: '#ff5a5a', whale: '#8fd3ff', boat: '#ffd166', safe: '#5ee08a', defend: '#ffd166', splash: '#8fd3ff', dolphin: '#8fd3ff', serpentmove: '#ff5a5a', sharkmove: '#ff5a5a', whalemove: '#8fd3ff' };
+function pawn(g, e, r, swim) {
+  return (
+    <g>
+      <circle r={r} fill={colOf(g, e.o, e.cs)} stroke={swim ? '#bfe9ff' : '#fff'} strokeWidth={swim ? 2 : 1.2} strokeDasharray={swim ? '2 1.5' : ''} />
+      {e.v !== undefined && <text y="2.8" textAnchor="middle" fontSize="8" fontWeight="700" fill="#111">{e.v}</text>}
+    </g>
+  );
+}
+
+export default function Board({ g, hi, sel, onCell, scale = 1, fx }) {
   const hiSet = new Set((hi && hi.cells) || []);
   const hiIsl = new Set((hi && hi.islands) || []);
   const byCell = {};
@@ -30,6 +41,24 @@ export default function Board({ g, hi, sel, onCell, scale = 1 }) {
   g.ex.forEach((e) => { if (e.loc[0] === 'ship' && shipById[e.loc[1]]) { const s = shipById[e.loc[1]]; s.pax.push(e); } });
   g.cr.forEach((c) => at(c.c).cr.push(c));
 
+  // ชิ้นส่วนทั้งหมดพร้อมตำแหน่ง (เพื่อให้เลื่อนอย่างนุ่มนวล)
+  const items = [];
+  Object.entries(byCell).forEach(([c, o]) => {
+    const [cx, cy] = ctr(c);
+    if (o.ship) {
+      const sp = o.ship;
+      items.push({ key: sp.id, x: cx, y: cy, node: <path d="M-13,-3 L13,-3 L8,6 L-8,6 Z" fill="#8a5a2b" stroke="#3d2610" strokeWidth="1.5" /> });
+      sp.pax.forEach((e, i) => items.push({ key: e.id, x: cx - (sp.pax.length - 1) * 5.5 + i * 11, y: cy - 8, node: pawn(g, e, 5.2, false) }));
+    }
+    o.cr.forEach((k, i) => items.push({ key: k.id, x: cx - 8 + i * 10, y: cy - 8 + i * 4, node: <text textAnchor="middle" y="7" fontSize="19">{k.k === 'serpent' ? '🐉' : k.k === 'shark' ? '🦈' : '🐋'}</text> }));
+    const n = o.ex.length;
+    o.ex.forEach((e, i) => {
+      const row = n > 4 ? Math.floor(i / 4) : 0;
+      const inRow = n > 4 ? Math.min(4, n - row * 4) : n;
+      const col = n > 4 ? i % 4 : i;
+      items.push({ key: e.id, x: cx + (col - (inRow - 1) / 2) * 11, y: cy + 12 - row * 10, node: pawn(g, e, 5.3, e.loc[0] === 'sea') });
+    });
+  });
   const sea = CELLS.filter((c) => !g.tiles[c]);
   const docks = new Set(Object.values(SAFE).flat());
   return (
@@ -79,42 +108,20 @@ export default function Board({ g, hi, sel, onCell, scale = 1 }) {
         );
       })}
       <g style={{ pointerEvents: 'none' }}>
-        {Object.entries(byCell).map(([c, o]) => {
-          const [cx, cy] = ctr(c);
-          const els = [];
-          if (o.ship) {
-            const s = o.ship;
-            els.push(
-              <g key="ship">
-                <path d={`M${cx - 13},${cy - 3} L${cx + 13},${cy - 3} L${cx + 8},${cy + 6} L${cx - 8},${cy + 6} Z`} fill="#8a5a2b" stroke="#3d2610" strokeWidth="1.5" />
-                {s.pax.map((e, i) => (
-                  <g key={e.id}>
-                    <circle cx={cx - (s.pax.length - 1) * 5.5 + i * 11} cy={cy - 8} r="5.2" fill={colOf(g, e.o, e.cs)} stroke="#fff" strokeWidth="1.2" />
-                    {e.v !== undefined && <text x={cx - (s.pax.length - 1) * 5.5 + i * 11} y={cy - 5.5} textAnchor="middle" fontSize="7.5" fontWeight="700" fill="#111">{e.v}</text>}
-                  </g>
-                ))}
-              </g>,
-            );
-          }
-          o.cr.forEach((k, i) => {
-            const ico = k.k === 'serpent' ? '🐉' : k.k === 'shark' ? '🦈' : '🐋';
-            els.push(<text key={k.id} x={cx - 8 + i * 10} y={cy - 8 + i * 4} textAnchor="middle" fontSize="19">{ico}</text>);
-          });
-          const n = o.ex.length;
-          o.ex.forEach((e, i) => {
-            const row = n > 4 ? Math.floor(i / 4) : 0;
-            const inRow = n > 4 ? Math.min(4, n - row * 4) : n;
-            const col = n > 4 ? i % 4 : i;
-            const x = cx + (col - (inRow - 1) / 2) * 11;
-            const y = cy + 12 - row * 10;
-            els.push(
-              <g key={e.id}>
-                <circle cx={x} cy={y} r="5.3" fill={colOf(g, e.o, e.cs)} stroke={e.loc[0] === 'sea' ? '#bfe9ff' : '#fff'} strokeWidth={e.loc[0] === 'sea' ? 2 : 1.2} strokeDasharray={e.loc[0] === 'sea' ? '2 1.5' : ''} />
-                {e.v !== undefined && <text x={x} y={y + 2.8} textAnchor="middle" fontSize="8" fontWeight="700" fill="#111">{e.v}</text>}
-              </g>,
-            );
-          });
-          return <g key={c}>{els}</g>;
+        {items.map((it) => (
+          <g key={it.key} style={{ transform: `translate(${it.x}px, ${it.y}px)`, transition: 'transform .75s cubic-bezier(.4,.1,.2,1)' }}>
+            <g className="pop">{it.node}</g>
+          </g>
+        ))}
+        {(fx || []).map((f) => {
+          const pos = f.c ? (f.c.startsWith('safe:') ? islandPos(f.c.slice(5)) : ctr(f.c)) : null;
+          if (!pos) return null;
+          return (
+            <g key={f.i} transform={`translate(${pos[0]},${pos[1]})`}>
+              <circle r="10" fill="none" stroke={FXCOL[f.k] || '#fff'} strokeWidth="4" className="ring" />
+              <text textAnchor="middle" y="8" fontSize="30" className="fxico">{FXICO[f.k] || ''}</text>
+            </g>
+          );
         })}
       </g>
     </svg>
